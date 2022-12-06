@@ -1,0 +1,128 @@
+#!/bin/sh
+
+data=""
+base=""
+PROGRAM="$(basename $0)"
+verbosity=0
+
+# -- print general usage of the script.
+usage() {
+
+  cat <<help
+
+    usage: ${PROGRAM} [options] [file(s)_to_plot]
+
+    options:
+      -h,--help                 Show this message.
+      -v, --verbose             Increase verbosity. Might be helpful for debugging.
+      -o, --opt, --options STR  Pass string STR to the gnuplot plot command.
+      -p, --pre, --preplot STR  Pass string STR to gnuplot before the plot command.
+
+    e.g., plotGNU -v --pre "set logscale xy; set yrange [1:10]" --opt "notitle w lp lt 1 lc 3 ps 4 pt 1" datafile(s)_to_plot
+
+    Multiple data files can be supplied as arguments, so long as they are the last arguments.
+    One plot will be generated for each supplied data file, with the same --preplot and --options parameters
+
+help
+}
+
+plot(){
+
+	# -- determine number of columns in input data
+	ncol=0
+  narr=$(awk -F " " "{print NF}" "${data}")
+  for n in ${narr[@]} ; do
+    [ $ncol -lt $n ] && ncol=$n
+  done
+
+	[ "${verbosity}" -gt 0 ] && printf "NCOL            = %s\n" "${ncol}"
+
+	echo "${preplt} ; plot for [c=2:${ncol}] ""'""${data}""'"" u 1:c ${gnuplot_options}" | gnuplot -persist
+
+}
+
+# -- raise an error message and exits.
+die() {
+
+  local exit_code=1
+  local error_message="$1"
+
+	echo "${PROGRAM}: ${error_message}" 1>&2
+
+  exit "${exit_code}"
+}
+
+main() {
+
+	while :; do
+		case $1 in
+			-h|-\?|--help)
+				usage
+				exit 0
+				;;
+
+			-v|--verbose)
+				verbosity=$((verbosity + 1))
+				;;
+
+			-o | --opt | --options)
+				[ "$2" ] && gnuplot_options="${2}" && shift || die 'ERROR: "--options" requires a non-empty option argument.'
+				;;
+			-o= | --opt= | --options=)
+				die 'ERROR: "--options" requires a non-empty argument.'
+				;;
+			-o=?* | --opt=?* | --options=?*)
+				gnuplot_option="${1#*=}"
+				;;
+
+			-p | --pre | --preplot)
+				[ "$2" ] && preplt="${2}" && shift || die 'ERROR: "--preplot" requires a non-empty option argument.'
+				;;
+			-p= | --pre= | --preplot=)
+				die 'ERROR: "--preplot" requires a non-empty argument.'
+				;;
+			-p=?* | --pre=?* | --preplot=?*)
+				preplt="${1#*=}"
+				;;
+
+			--)
+				shift
+				break
+				;;
+			-?*)
+				printf 'WARN: Unknown option (ignored): %s\n' "${1}"
+				;;
+			*)
+        # -- loop over supplied data files
+        while
+
+          data="$1"
+          [ "${verbosity}" -gt 0 ] && printf "DATA            = %s\n" "${data}"
+          [ "${verbosity}" -gt 0 ] && printf "GNUPLOT_OPTIONS = %s\n" "${gnuplot_option}"
+
+          [ -z "${data}" ] && die "No data file given to plot"
+          [ -r "${data}" ] || die "'""${data}""'"" does not exist or is not readable by ${PROGRAM}"
+
+          base="${data%.*}"
+
+          [ "${verbosity}" -gt 0 ] && printf "BASE            = %s\n" "${base}"
+
+          plot
+          shift
+
+          # -- test if we have more shit to plot
+          [ ! -z "$1" ]
+        do :; done
+
+        break
+
+				;;
+
+			esac
+			shift
+
+	done
+
+}
+
+main "$@"
